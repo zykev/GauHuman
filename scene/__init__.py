@@ -47,7 +47,7 @@ class Scene:
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
-        elif 'zju_mocap_refine' in args.source_path: #os.path.exists(os.path.join(args.source_path, "annots.npy")):
+        elif 'zju_mocap' in args.source_path: #os.path.exists(os.path.join(args.source_path, "annots.npy")):
             print("Found annots.json file, assuming ZJU_MoCap_refine data set!")
             scene_info = sceneLoadTypeCallbacks["ZJU_MoCap_refine"](args.source_path, args.white_background, args.exp_name, args.eval)
         elif 'monocap' in args.source_path:

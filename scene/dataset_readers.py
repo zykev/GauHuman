@@ -564,7 +564,7 @@ def readCamerasZJUMoCapRefine(path, output_view, white_background, image_scaling
     ims = np.array([
         np.array(ims_data['ims'])[output_view]
         for ims_data in annots['ims'][pose_start:pose_start + pose_num * pose_interval][::pose_interval]
-    ])
+    ]) # sample 1 frame every 5 frames and collect 100 frames for training
 
     cam_inds = np.array([
         np.arange(len(ims_data['ims']))[output_view]
