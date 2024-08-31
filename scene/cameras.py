@@ -16,7 +16,7 @@ from utils.graphics_utils import getWorld2View2, getProjectionMatrix, getProject
 
 class Camera(nn.Module):
     def __init__(self, colmap_id, pose_id, R, T, K, FoVx, FoVy, image, gt_alpha_mask,
-                 image_name, uid,
+                 image_name, uid, semantic_feature,
                  bkgd_mask=None, bound_mask=None, smpl_param=None, 
                  world_vertex=None, world_bound=None, big_pose_smpl_param=None,
                  big_pose_world_vertex=None, big_pose_world_bound=None,
@@ -33,6 +33,7 @@ class Camera(nn.Module):
         self.FoVx = FoVx
         self.FoVy = FoVy
         self.image_name = image_name
+        self.semantic_feature = semantic_feature
         self.bkgd_mask = bkgd_mask
         self.bound_mask = bound_mask
 

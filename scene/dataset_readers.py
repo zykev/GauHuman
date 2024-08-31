@@ -53,6 +53,8 @@ class CameraInfo(NamedTuple):
     big_pose_smpl_param: dict
     big_pose_world_vertex: np.array
     big_pose_world_bound: np.array
+    semantic_feature: torch.tensor 
+    semantic_feature_path: str 
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -60,6 +62,7 @@ class SceneInfo(NamedTuple):
     test_cameras: list
     nerf_normalization: dict
     ply_path: str
+    semantic_feature_dim: int
 
 def getNerfppNorm(cam_info):
     def get_center_and_diag(cam_centers):
@@ -555,8 +558,8 @@ def readCamerasZJUMoCapRefine(path, output_view, white_background, image_scaling
         pose_num = 100
     elif split == 'test':
         pose_start = 0
-        pose_interval = 30
-        pose_num = 17
+        pose_interval = 100 # 30
+        pose_num = 5 # 17
 
     ann_file = os.path.join(path, 'annots.npy')
     annots = np.load(ann_file, allow_pickle=True).item()
@@ -615,6 +618,10 @@ def readCamerasZJUMoCapRefine(path, output_view, white_background, image_scaling
             msk_path = image_path.replace('images', 'mask').replace('jpg', 'png')
             msk = imageio.imread(msk_path)
             msk = (msk != 0).astype(np.uint8)
+
+            # feature map
+            semantic_feature_path = os.path.join(path, f"{image_name.replace('images', 'feature_maps')}_fmap.pt")
+            semantic_feature = torch.load(semantic_feature_path) 
 
             if not novel_view_vis:
                 cam_ind = cam_inds[pose_index][view_index]
@@ -689,7 +696,8 @@ def readCamerasZJUMoCapRefine(path, output_view, white_background, image_scaling
                             bound_mask=bound_mask, width=image.size[0], height=image.size[1], 
                             smpl_param=smpl_param, world_vertex=xyz, world_bound=world_bound, 
                             big_pose_smpl_param=big_pose_smpl_param, big_pose_world_vertex=big_pose_xyz, 
-                            big_pose_world_bound=big_pose_world_bound))
+                            big_pose_world_bound=big_pose_world_bound,
+                            semantic_feature=semantic_feature, semantic_feature_path=semantic_feature_path))
 
             idx += 1
             
@@ -697,14 +705,16 @@ def readCamerasZJUMoCapRefine(path, output_view, white_background, image_scaling
 
 def readZJUMoCapRefineInfo(path, white_background, output_path, eval):
     train_view = [4]
-    test_view = [i for i in range(0, 23)]
-    test_view.remove(train_view[0])
+    # randomly select 2 view for testing
+    test_view = random.sample([i for i in range(0, 23) if i != 4], 2)
 
     print("Reading Training Transforms")
     train_cam_infos = readCamerasZJUMoCapRefine(path, train_view, white_background, split='train')
     print("Reading Test Transforms")
     test_cam_infos = readCamerasZJUMoCapRefine(path, test_view, white_background, split='test', novel_view_vis=False)
     
+    semantic_feature_dim = train_cam_infos[0].semantic_feature.shape[0]
+
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
@@ -735,7 +745,8 @@ def readZJUMoCapRefineInfo(path, white_background, output_path, eval):
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
-                           ply_path=ply_path)
+                           ply_path=ply_path,
+                           semantic_feature_dim=semantic_feature_dim)
     return scene_info
 
 ##################################   DNARendering   ##################################

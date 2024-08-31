@@ -26,14 +26,52 @@ from gaussian_renderer import GaussianModel
 from utils.image_utils import psnr
 from utils.loss_utils import ssim
 import lpips
+import sklearn
+import torch.nn as nn
+import torch.nn.functional as F
+from PIL import Image
+import numpy as np
+from nets.feature_decoder import CNN_decoder
 loss_fn_vgg = lpips.LPIPS(net='vgg').to(torch.device('cuda', torch.cuda.current_device()))
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
+def feature_visualize_saving(feature):
+    fmap = feature[None, :, :, :] # torch.Size([1, 512, h, w]) for lseg  [1, 256, h, w] for seg
+    fmap = nn.functional.normalize(fmap, dim=1)
+    pca = sklearn.decomposition.PCA(3, random_state=42)
+    f_samples = fmap.permute(0, 2, 3, 1).reshape(-1, fmap.shape[1])[::3].cpu().numpy()
+    transformed = pca.fit_transform(f_samples)
+    feature_pca_mean = torch.tensor(f_samples.mean(0)).float().cuda()
+    feature_pca_components = torch.tensor(pca.components_).float().cuda()
+    q1, q99 = np.percentile(transformed, [1, 99])
+    feature_pca_postprocess_sub = q1
+    feature_pca_postprocess_div = (q99 - q1)
+    del f_samples
+    vis_feature = (fmap.permute(0, 2, 3, 1).reshape(-1, fmap.shape[1]) - feature_pca_mean[None, :]) @ feature_pca_components.T
+    vis_feature = (vis_feature - feature_pca_postprocess_sub) / feature_pca_postprocess_div
+    vis_feature = vis_feature.clamp(0.0, 1.0).float().reshape((fmap.shape[2], fmap.shape[3], 3)).cpu()
+    return vis_feature
+
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background, speedup):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
-
+    feature_map_path = os.path.join(model_path, name, "ours_{}".format(iteration), "feature_map")
+    gt_feature_map_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt_feature_map")
+    saved_feature_path = os.path.join(model_path, name, "ours_{}".format(iteration), "saved_feature")
+    #encoder_ckpt_path = os.path.join(model_path, "encoder_chkpnt{}.pth".format(iteration))
+    decoder_ckpt_path = os.path.join(model_path, "decoder_chkpnt{}.pth".format(iteration))
+    depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
+    if speedup:
+        gt_feature_map = views[0].semantic_feature.cuda()
+        feature_out_dim = gt_feature_map.shape[0]
+        feature_in_dim = int(feature_out_dim/4)
+        cnn_decoder = CNN_decoder(feature_in_dim, feature_out_dim)
+        cnn_decoder.load_state_dict(torch.load(decoder_ckpt_path))
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
+    makedirs(feature_map_path, exist_ok=True)
+    makedirs(gt_feature_map_path, exist_ok=True)
+    makedirs(saved_feature_path, exist_ok=True)
+    makedirs(depth_path, exist_ok=True) ###
 
     # Load data (deserialize)
     with open(model_path + '/smpl_rot/' + f'iteration_{iteration}/' + 'smpl_rot.pickle', 'rb') as handle:
@@ -41,10 +79,13 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     rgbs = []
     rgbs_gt = []
+    fs = []
+    fs_gt = []
     elapsed_time = 0
 
     for _, view in enumerate(tqdm(views, desc="Rendering progress")):
         gt = view.original_image[0:3, :, :].cuda()
+        gt_feature_map = view.semantic_feature.cuda() 
         bound_mask = view.bound_mask
         transforms, translation = smpl_rot[name][view.pose_id]['transforms'], smpl_rot[name][view.pose_id]['translation']
 
@@ -52,6 +93,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         start_time = time.time() 
         render_output = render(view, gaussians, pipeline, background, transforms=transforms, translation=translation)
         rendering = render_output["render"]
+        feature_map = render_output["feature_map"]
         
         # end time
         end_time = time.time()
@@ -62,6 +104,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
         rgbs.append(rendering)
         rgbs_gt.append(gt)
+        fs.append(feature_map)
+        fs_gt.append(gt_feature_map)
 
     # Calculate elapsed time
     print("Elapsed time: ", elapsed_time, " FPS: ", len(views)/elapsed_time) 
@@ -77,6 +121,22 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         gt = torch.clamp(gt, 0.0, 1.0)
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(id) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(id) + ".png"))
+
+        # feature map
+        feature_map = fs[id]
+        gt_feature_map = fs_gt[id]
+        feature_map = F.interpolate(feature_map.unsqueeze(0), size=(gt_feature_map.shape[1], gt_feature_map.shape[2]), mode='bilinear', align_corners=True).squeeze(0) ###
+        if speedup:
+            feature_map = cnn_decoder(feature_map)
+
+        feature_map_vis = feature_visualize_saving(feature_map)
+        Image.fromarray((feature_map_vis.cpu().numpy() * 255).astype(np.uint8)).save(os.path.join(feature_map_path, '{0:05d}'.format(idx) + "_feature_vis.png"))
+        gt_feature_map_vis = feature_visualize_saving(gt_feature_map)
+        Image.fromarray((gt_feature_map_vis.cpu().numpy() * 255).astype(np.uint8)).save(os.path.join(gt_feature_map_path, '{0:05d}'.format(idx) + "_feature_vis.png"))
+
+        # save feature map
+        feature_map = feature_map.cpu().numpy().astype(np.float16)
+        torch.save(torch.tensor(feature_map).half(), os.path.join(saved_feature_path, '{0:05d}'.format(id) + "_fmap_CxHxW.pt"))
 
         # metrics
         psnrs += psnr(rendering, gt).mean().double()
@@ -99,10 +159,10 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
+             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, speedup=False)
 
         if not skip_test:
-             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, speedup=False)
 
 if __name__ == "__main__":
     # Set up command line argument parser

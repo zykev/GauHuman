@@ -19,6 +19,7 @@ WARNED = False
 def loadCam(args, id, cam_info, resolution_scale):
     orig_w, orig_h = cam_info.image.size
 
+    gt_semantic_feature = cam_info.semantic_feature
     if args.resolution in [1, 2, 4, 8]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
     else:  # should be a type that converts to float
@@ -64,7 +65,8 @@ def loadCam(args, id, cam_info, resolution_scale):
                   world_vertex=cam_info.world_vertex, world_bound=cam_info.world_bound, 
                   big_pose_smpl_param=cam_info.big_pose_smpl_param, 
                   big_pose_world_vertex=cam_info.big_pose_world_vertex, 
-                  big_pose_world_bound=cam_info.big_pose_world_bound, 
+                  big_pose_world_bound=cam_info.big_pose_world_bound,
+                  semantic_feature=gt_semantic_feature, 
                   data_device=args.data_device)
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):
