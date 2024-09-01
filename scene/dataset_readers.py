@@ -555,8 +555,8 @@ def readCamerasZJUMoCapRefine(path, output_view, white_background, image_scaling
         pose_num = 100
     elif split == 'test':
         pose_start = 0
-        pose_interval = 30
-        pose_num = 17
+        pose_interval = 100 #30
+        pose_num = 5 #17
 
     ann_file = os.path.join(path, 'annots.npy')
     annots = np.load(ann_file, allow_pickle=True).item()
@@ -697,8 +697,9 @@ def readCamerasZJUMoCapRefine(path, output_view, white_background, image_scaling
 
 def readZJUMoCapRefineInfo(path, white_background, output_path, eval):
     train_view = [4]
-    test_view = [i for i in range(0, 23)]
-    test_view.remove(train_view[0])
+    # test_view = [i for i in range(0, 23)]
+    test_view = [14, 16]
+    # test_view.remove(train_view[0])
 
     print("Reading Training Transforms")
     train_cam_infos = readCamerasZJUMoCapRefine(path, train_view, white_background, split='train')
