@@ -72,9 +72,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_stack = None
     ema_loss_for_log = 0.0
     Ll1_loss_for_log = 0.0
-    # mask_loss_for_log = 0.0
+    mask_loss_for_log = 0.0
     ssim_loss_for_log = 0.0
     lpips_loss_for_log = 0.0
+    feature_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
 
@@ -117,15 +118,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if (iteration - 1) == debug_from:
             pipe.debug = True
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        # feature_map, image, alpha, viewspace_point_tensor, visibility_filter, radii = render_pkg["feature_map"], render_pkg["render"], render_pkg["render_alpha"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-        feature_map, image, viewspace_point_tensor, visibility_filter, radii = render_pkg["feature_map"], render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        feature_map, image, alpha, viewspace_point_tensor, visibility_filter, radii = render_pkg["feature_map"], render_pkg["render"], render_pkg["render_alpha"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        # feature_map, image, viewspace_point_tensor, visibility_filter, radii = render_pkg["feature_map"], render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         bkgd_mask = viewpoint_cam.bkgd_mask.cuda()
         bound_mask = viewpoint_cam.bound_mask.cuda()
         Ll1 = l1_loss(image.permute(1,2,0)[bound_mask[0]==1], gt_image.permute(1,2,0)[bound_mask[0]==1])
-        # mask_loss = l2_loss(alpha[bound_mask==1], bkgd_mask[bound_mask==1])
+        mask_loss = l2_loss(alpha[bound_mask==1], bkgd_mask[bound_mask==1])
 
         # crop the object region
         x, y, w, h = cv2.boundingRect(bound_mask[0].cpu().numpy().astype(np.uint8))
@@ -143,8 +144,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             feature_map = cnn_decoder(feature_map)
         feature_loss = l1_loss(feature_map, gt_feature_map) 
 
-        # loss = Ll1 + 0.1 * mask_loss + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 0.01 * feature_loss
-        loss = Ll1 + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 0.01 * feature_loss
+        loss = Ll1 + 0.1 * mask_loss + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 0.01 * feature_loss
+        # loss = Ll1 + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 0.01 * feature_loss
         loss.backward()
 
         # end time
@@ -161,13 +162,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             Ll1_loss_for_log = 0.4 * Ll1.item() + 0.6 * Ll1_loss_for_log
-            # mask_loss_for_log = 0.4 * mask_loss.item() + 0.6 * mask_loss_for_log
+            mask_loss_for_log = 0.4 * mask_loss.item() + 0.6 * mask_loss_for_log
             ssim_loss_for_log = 0.4 * ssim_loss.item() + 0.6 * ssim_loss_for_log
             lpips_loss_for_log = 0.4 * lpips_loss.item() + 0.6 * lpips_loss_for_log
             feature_loss_for_log = 0.4 * feature_loss.item() + 0.6 * feature_loss_for_log
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"#pts": gaussians._xyz.shape[0], "Ll1 Loss": f"{Ll1_loss_for_log:.{3}f}", 
-                                        #   "mask Loss": f"{mask_loss_for_log:.{2}f}",
+                                          "mask Loss": f"{mask_loss_for_log:.{2}f}",
                                           "ssim": f"{ssim_loss_for_log:.{2}f}", "lpips": f"{lpips_loss_for_log:.{2}f}", "feature": f"{feature_loss_for_log:.{2}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:

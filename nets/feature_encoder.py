@@ -104,13 +104,14 @@ for images, paths, masks in tqdm(dataloader, desc="Generating gt feature maps"):
     with torch.no_grad():
         features_dict = dino_model.forward_features(images.to(args.device))
         human_feature = features_dict['x_norm_patchtokens']
-        human_feature = human_feature.reshape(args.batch_size, patch_h, patch_w, -1).contiguous()
+        human_feature = human_feature.reshape(-1, patch_h, patch_w, feat_dim).contiguous()
 
         # obtain feature mask
         human_mask = torch.nn.functional.interpolate(masks.to(args.device), size=(patch_h*14, patch_w*14), mode='nearest')
         human_mask = torch.nn.functional.avg_pool2d(human_mask, kernel_size=14, stride=14)
-        feature_mask = (human_mask > 0.5).reshape(args.batch_size, patch_h, patch_w, 1).to(torch.float32)
+        feature_mask = (human_mask > 0.5).reshape(-1, patch_h, patch_w, 1).to(torch.float32)
         human_feature = human_feature * feature_mask.expand_as(human_feature)
+        human_feature = human_feature.permute(0, 3, 1, 2).contiguous()
         # save feature map for each feature in a batch
         for i, img_name in enumerate(paths):
             parts = img_name.split('/')
