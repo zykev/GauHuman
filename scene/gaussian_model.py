@@ -25,6 +25,7 @@ import pickle
 import torch.nn.functional as F
 from nets.mlp_delta_body_pose import BodyPoseRefiner
 from nets.mlp_delta_weight_lbs import LBSOffsetDecoder
+from nets.feature_decoder import OpacityRefiner, ColorRefiner
 
 class GaussianModel:
 
@@ -49,7 +50,7 @@ class GaussianModel:
         self.rotation_activation = torch.nn.functional.normalize
 
 
-    def __init__(self, sh_degree : int, smpl_type : str, motion_offset_flag : bool, actor_gender: str):
+    def __init__(self, sh_degree : int, smpl_type : str, motion_offset_flag : bool, actor_gender: str, semantic_feature_size : int, speedup: bool):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
         self._xyz = torch.empty(0)
@@ -92,6 +93,15 @@ class GaussianModel:
             self.lweight_offset_decoder = LBSOffsetDecoder(total_bones=total_bones)
             self.lweight_offset_decoder.to(self.device)
 
+            # load opacity refine module
+            if speedup: # speed up for Segmentation
+                semantic_feature_size = int(semantic_feature_size/4)
+            self.opacity_refiner = OpacityRefiner(semantic_feature_dim=semantic_feature_size, output_dim=1)
+            self.opacity_refiner.to(self.device)
+
+            # load color refine module
+            self.color_refiner = ColorRefiner((self.max_sh_degree + 1) ** 2, semantic_feature_size)
+            self.color_refiner.to(self.device)
     def capture(self):
         return (
             self.active_sh_degree,
@@ -108,6 +118,8 @@ class GaussianModel:
             self.spatial_lr_scale,
             self.pose_decoder,
             self.lweight_offset_decoder,
+            self.opacity_refiner,
+            self.color_refiner,
             self._semantic_feature, 
         )
     
@@ -126,6 +138,8 @@ class GaussianModel:
         self.spatial_lr_scale,
         self.pose_decoder,
         self.lweight_offset_decoder,
+        self.opacity_refiner,
+        self.color_refiner,
         self._semantic_feature) = model_args
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
@@ -219,6 +233,8 @@ class GaussianModel:
                 {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
                 {'params': self.pose_decoder.parameters(), 'lr': training_args.pose_refine_lr, "name": "pose_decoder"},
                 {'params': self.lweight_offset_decoder.parameters(), 'lr': training_args.lbs_offset_lr, "name": "lweight_offset_decoder"},
+                {'params': self.opacity_refiner.parameters(), 'lr': training_args.opacity_refine_lr, "name": "opacity_refiner"},
+                {'params': self.color_refiner.parameters(), 'lr': training_args.color_refine_lr, "name": "color_refiner"},
                 {'params': [self._semantic_feature], 'lr':training_args.semantic_feature_lr, "name": "semantic_feature"},
             ] 
 

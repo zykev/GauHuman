@@ -60,7 +60,9 @@ class ModelParams(ParamGroup):
         self.actor_gender = "neutral"
         self.motion_offset_flag = False
         self.speedup = False ###
+        self.semantic_feature_dim = 768 ###
         super().__init__(parser, "Loading Parameters", sentinel)
+
 
     def extract(self, args):
         g = super().extract(args)
@@ -87,7 +89,9 @@ class OptimizationParams(ParamGroup):
         self.rotation_lr = 0.001
         self.pose_refine_lr = 0.00005
         self.lbs_offset_lr = 0.00005
-        self.semantic_feature_lr = 0.001
+        self.opacity_refine_lr = 0.0001 ###
+        self.color_refine_lr = 0.001 ###
+        self.semantic_feature_lr = 0.001 ###
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
         self.densification_interval = 100

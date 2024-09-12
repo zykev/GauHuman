@@ -99,6 +99,8 @@ class Scene:
                 ckpt = torch.load(model_path, map_location='cuda:0')
                 self.gaussians.pose_decoder.load_state_dict(ckpt['pose_decoder'])
                 self.gaussians.lweight_offset_decoder.load_state_dict(ckpt['lweight_offset_decoder'])
+                self.gaussians.opacity_refiner.load_state_dict(ckpt['opacity_refiner'])
+                self.gaussians.color_refiner.load_state_dict(ckpt['color_refiner'])
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
@@ -111,6 +113,8 @@ class Scene:
                 'iter': iteration,
                 'pose_decoder': self.gaussians.pose_decoder.state_dict(),
                 'lweight_offset_decoder': self.gaussians.lweight_offset_decoder.state_dict(),
+                'opacity_refiner': self.gaussians.opacity_refiner.state_dict(),
+                'color_refiner': self.gaussians.color_refiner.state_dict(),
             }, model_path)
 
     def getTrainCameras(self, scale=1.0):

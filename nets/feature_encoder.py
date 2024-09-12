@@ -8,6 +8,7 @@ from PIL import Image
 import os
 import argparse
 from tqdm import tqdm
+import sklearn.decomposition
 
 parser = argparse.ArgumentParser(
     description=(
@@ -33,6 +34,9 @@ parser.add_argument(
         "of .pt per image or a single .pt representing image embeddings."
     ),
 )
+
+parser.add_argument("--pca_reduce", action='store_true', help="Whether to reduce the dimensionality of the embeddings using PCA.")
+parser.add_argument("--pca_components", type=int, default=64, help="The number of PCA components to reduce to.")
 
 parser.add_argument("--batch_size", type=int, default=16, help="The batch size to use for generation.")
 parser.add_argument("--device", type=str, default="cuda:0", help="The device to run generation on.")
@@ -92,7 +96,28 @@ class ZjumocapDataset(Dataset):
         mask = torch.from_numpy(mask[None, ...]).to(torch.float32)
   
         return image, img_path, mask  
-  
+    
+def pca_reduction(pca, human_feature, feature_mask, n_components):
+
+    # pca reduction applied on mask feature 
+    # human_feature: [H, W, C]
+    
+    patch_h, patch_w, feat_dim = human_feature.shape
+    features = human_feature.reshape(-1, feat_dim).cpu()
+    features = torch.nn.functional.normalize(features, dim=-1)
+
+    feature_mask = feature_mask.reshape(-1, 1).cpu()
+    transformed = pca.fit_transform(features)
+    transformed = torch.nn.functional.normalize(torch.from_numpy(transformed).to(torch.float32), dim=-1)
+
+    # pca_features = torch.zeros((features.shape[0], n_components))
+    # pca_features[~features_fg] = 0
+    # pca_features[features_fg] = transformed
+    pca_features = transformed * feature_mask.expand_as(transformed)
+
+    pca_features = pca_features.reshape((patch_h, patch_w, n_components)).permute(2, 0, 1).contiguous()
+
+    return pca_features
   
 # 实例化Dataset  
 dataset = ZjumocapDataset(root_dir=args.input)  
@@ -111,13 +136,23 @@ for images, paths, masks in tqdm(dataloader, desc="Generating gt feature maps"):
         human_mask = torch.nn.functional.avg_pool2d(human_mask, kernel_size=14, stride=14)
         feature_mask = (human_mask > 0.5).reshape(-1, patch_h, patch_w, 1).to(torch.float32)
         human_feature = human_feature * feature_mask.expand_as(human_feature)
-        human_feature = human_feature.permute(0, 3, 1, 2).contiguous()
+        if not args.pca_reduce:
+            pca = None
+            human_feature = human_feature.permute(0, 3, 1, 2).contiguous() # [B, C, H, W]
+        else:
+            pca = sklearn.decomposition.PCA(n_components=args.pca_components, random_state=42)
+        
         # save feature map for each feature in a batch
         for i, img_name in enumerate(paths):
+            # feature map pca reduction
+            if pca is not None:
+                save_feature = pca_reduction(pca, human_feature[i], feature_mask[i], n_components=args.pca_components)
+            else:
+                save_feature = human_feature[i]
             parts = img_name.split('/')
             view = parts[-2]  
             img_id = parts[-1].split('.')[0]  
-            torch.save(human_feature[i], os.path.join(args.output, f"{view}/{img_id}_fmap.pt"))
+            torch.save(save_feature, os.path.join(args.output, f"{view}/{img_id}_fmap.pt"))
 
 
     

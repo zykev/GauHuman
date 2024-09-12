@@ -28,7 +28,7 @@ from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from nets.feature_decoder import CNN_decoder
 
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -45,18 +45,20 @@ import torch.nn.functional as F
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
-    gaussians = GaussianModel(dataset.sh_degree, dataset.smpl_type, dataset.motion_offset_flag, dataset.actor_gender)
+
+
+    gaussians = GaussianModel(dataset.sh_degree, dataset.smpl_type, dataset.motion_offset_flag, dataset.actor_gender, dataset.semantic_feature_dim, dataset.speedup)
     scene = Scene(dataset, gaussians)
 
-    viewpoint_stack = scene.getTrainCameras().copy()
-    viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
-    gt_feature_map = viewpoint_cam.semantic_feature.cuda()
-    feature_out_dim = gt_feature_map.shape[0]
+    # viewpoint_stack = scene.getTrainCameras().copy()
+    # viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+    # feature_out_dim = viewpoint_cam.semantic_feature.shape[0]
+
 
     # speed up
     if dataset.speedup:
-        feature_in_dim = int(feature_out_dim/4)
-        cnn_decoder = CNN_decoder(feature_in_dim, feature_out_dim)
+        feature_in_dim = int(dataset.semantic_feature_dim/4)
+        cnn_decoder = CNN_decoder(feature_in_dim, dataset.semantic_feature_dim)
         cnn_decoder_optimizer = torch.optim.Adam(cnn_decoder.parameters(), lr=0.0001)
     gaussians.training_setup(opt)
     if checkpoint:
@@ -144,7 +146,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             feature_map = cnn_decoder(feature_map)
         feature_loss = l1_loss(feature_map, gt_feature_map) 
 
-        loss = Ll1 + 0.1 * mask_loss + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 0.01 * feature_loss
+        loss = Ll1 + 0.1 * mask_loss + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 1.0 * feature_loss
         # loss = Ll1 + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 0.01 * feature_loss
         loss.backward()
 
