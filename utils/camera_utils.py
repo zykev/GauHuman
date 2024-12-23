@@ -20,6 +20,7 @@ def loadCam(args, id, cam_info, resolution_scale):
     orig_w, orig_h = cam_info.image.size
 
     gt_semantic_feature = cam_info.semantic_feature
+    gt_semantic_feature_path = cam_info.semantic_feature_path
     if args.resolution in [1, 2, 4, 8]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
     else:  # should be a type that converts to float
@@ -56,6 +57,7 @@ def loadCam(args, id, cam_info, resolution_scale):
         resized_bkgd_mask = PILtoTorch(cam_info.bkgd_mask, resolution)
     else:
         resized_bkgd_mask = None
+    
 
     return Camera(colmap_id=cam_info.uid, pose_id=cam_info.pose_id, R=cam_info.R, T=cam_info.T, K=cam_info.K, 
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
@@ -67,6 +69,7 @@ def loadCam(args, id, cam_info, resolution_scale):
                   big_pose_world_vertex=cam_info.big_pose_world_vertex, 
                   big_pose_world_bound=cam_info.big_pose_world_bound,
                   semantic_feature=gt_semantic_feature, 
+                  semantic_feature_path=gt_semantic_feature_path,
                   data_device=args.data_device)
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):

@@ -141,12 +141,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # feature loss
         gt_feature_map = viewpoint_cam.semantic_feature.cuda()
-        feature_map = F.interpolate(feature_map.unsqueeze(0), size=(gt_feature_map.shape[1], gt_feature_map.shape[2]), mode='bilinear', align_corners=True).squeeze(0) 
+        feature_map = F.interpolate(feature_map.unsqueeze(0), size=(gt_feature_map.shape[1], gt_feature_map.shape[2]), mode='bilinear', align_corners=True).squeeze(0) # resize pixel level to gt_feature_map size
         if dataset.speedup:
             feature_map = cnn_decoder(feature_map)
-        feature_loss = l1_loss(feature_map, gt_feature_map) 
+        # generate bound_mask for feature map
+        with torch.no_grad():
+            downsampling_size = bound_mask.shape[-1] // feature_map.shape[-1]
+            bound_mask_semantic = torch.nn.functional.avg_pool2d(bound_mask.unsqueeze(0), kernel_size=downsampling_size, stride=downsampling_size)
+            bound_mask_semantic = (bound_mask_semantic > 0.5).squeeze(0).to(torch.float32)
+        feature_loss = l1_loss(feature_map.permute(1,2,0)[bound_mask_semantic[0]==1], gt_feature_map.permute(1,2,0)[bound_mask_semantic[0]==1]) 
 
-        loss = Ll1 + 0.1 * mask_loss + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 1.0 * feature_loss
+        loss = Ll1 + 0.1 * mask_loss + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 5.0 * feature_loss
         # loss = Ll1 + 0.01 * (1.0 - ssim_loss) + 0.01 * lpips_loss + 0.01 * feature_loss
         loss.backward()
 

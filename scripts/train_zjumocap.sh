@@ -1,4 +1,4 @@
-expname=zju_mocap/my_377_100_smpl_featuregs_color3
+expname=zju_mocap/my_377_100_smpl_featuregs_color_boundmask_weight5
 mkdir -p output/${expname}
 
 CUDA_VISIBLE_DEVICES=3 python train.py \

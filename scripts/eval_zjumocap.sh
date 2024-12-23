@@ -1,4 +1,4 @@
-expname=zju_mocap/my_377_100_smpl_featuregs_color3
+expname=zju_mocap/my_377_100_smpl_featuregs_color_boundmask_weight5
 
 CUDA_VISIBLE_DEVICES=0 python render.py \
 -m output/${expname} \
